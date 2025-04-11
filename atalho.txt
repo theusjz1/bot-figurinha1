@@ -1,0 +1,6 @@
+cd C:\Users\theusjz\Documents\whatsapp-bot-stickers
+node bot.js
+
+git config --global user.name "theusjz1"
+git config --global user.email "0000114854074xsp@al.educacao.sp.gov.br"
+

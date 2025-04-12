@@ -1,23 +1,16 @@
-# Usa uma imagem Node.js oficial com ffmpeg instalado
-FROM jrottenberg/ffmpeg:4.4-ubuntu
+FROM node:18
 
-# Instala o Node.js LTS e outras dependências
-RUN apt-get update && apt-get install -y curl gnupg && \
-    curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
-    apt-get install -y nodejs && \
-    npm install -g npm@latest
+# Instala ffmpeg
+RUN apt-get update && apt-get install -y ffmpeg
 
-# Define o diretório de trabalho
+# Cria diretório da aplicação
 WORKDIR /app
 
-# Copia os arquivos do projeto
+# Copia os arquivos
 COPY . .
 
-# Instala as dependências do projeto
+# Instala as dependências
 RUN npm install
 
-# Expõe a porta (pode não ser usada, mas evita erro)
-EXPOSE 3000
-
-# Comando para iniciar o bot
-CMD ["node", "bot.js"]
+# Inicia o bot
+CMD ["npm", "start"]

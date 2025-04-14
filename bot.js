@@ -14,6 +14,8 @@ const path = require('path');
 const QRCode = require('qrcode');  // Importando a biblioteca qrcode
 
 async function connectBot() {
+  console.log('Iniciando o bot...');
+
   // Ajuste do caminho da pasta de autenticação para ser absoluto
   const { state, saveCreds } = await useMultiFileAuthState(path.join(__dirname, 'auth'));
   const { version } = await fetchLatestBaileysVersion();
@@ -28,8 +30,10 @@ async function connectBot() {
 
   sock.ev.on('creds.update', saveCreds);
 
+  // Log para verificar o estado da conexão
   sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect } = update;
+    console.log('Conexão Atualizada:', update);  // Log da atualização da conexão
     if (connection === 'close') {
       const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
       if (shouldReconnect) connectBot();
@@ -38,12 +42,19 @@ async function connectBot() {
     }
   });
 
+  // Verifique se o evento QR está sendo chamado corretamente
   sock.ev.on('qr', async (qr) => {
-    console.log('QR RECEIVED', qr);
-
-    // Gera o QR Code em formato de imagem (PNG) e salva no diretório atual
-    await QRCode.toFile('qr-code.png', qr);  // Gera a imagem PNG
-    console.log('QR Code salvo como "qr-code.png".');
+    console.log('QR RECEIVED', qr);  // Verifica se o QR Code está sendo gerado
+    if (qr) {
+      try {
+        await QRCode.toFile('qr-code.png', qr);  // Gera o arquivo PNG
+        console.log('QR Code salvo como "qr-code.png".');
+      } catch (error) {
+        console.error('Erro ao gerar o QR Code:', error);
+      }
+    } else {
+      console.log('QR Code não recebido.');
+    }
   });
 
   sock.ev.on('messages.upsert', async ({ messages }) => {

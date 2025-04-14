@@ -1,6 +1,10 @@
-node_modules
-*.exe
-*.log
+auth/
+node_modules/
 .env
+backup-bot-figurinha
+bot-figurinha-mirror
 *.webp
-temp_*
+*.mp4
+*.ogg
+temp_input
+temp_output

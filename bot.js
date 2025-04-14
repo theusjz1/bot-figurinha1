@@ -11,17 +11,19 @@ const pino = require('pino');
 const { writeFile } = require('fs/promises');
 const ffmpeg = require('fluent-ffmpeg');
 const path = require('path');
+const QRCode = require('qrcode');  // Importando a biblioteca qrcode
 
 async function connectBot() {
-  const { state, saveCreds } = await useMultiFileAuthState('./auth');
+  // Ajuste do caminho da pasta de autenticação para ser absoluto
+  const { state, saveCreds } = await useMultiFileAuthState(path.join(__dirname, 'auth'));
   const { version } = await fetchLatestBaileysVersion();
 
   const sock = makeWASocket({
     version,
     logger: pino({ level: 'silent' }),
-    printQRInTerminal: true,
-    auth: state,
-    browser: ['Chrome (Bot)', 'Safari', '1.0.0'], // ajuda o QR Code a sair melhor
+    printQRInTerminal: true,  // Garante que o QR Code será exibido no terminal
+    auth: state,              // Usa o estado da autenticação gerado
+    browser: ['Chrome (Bot)', 'Safari', '1.0.0'],  // Ajuda a gerar um QR Code mais claro
   });
 
   sock.ev.on('creds.update', saveCreds);
@@ -34,6 +36,14 @@ async function connectBot() {
     } else if (connection === 'open') {
       console.log('✅ BOT CONECTADO AO WHATSAPP');
     }
+  });
+
+  sock.ev.on('qr', async (qr) => {
+    console.log('QR RECEIVED', qr);
+
+    // Gera o QR Code em formato de imagem (PNG) e salva no diretório atual
+    await QRCode.toFile('qr-code.png', qr);  // Gera a imagem PNG
+    console.log('QR Code salvo como "qr-code.png".');
   });
 
   sock.ev.on('messages.upsert', async ({ messages }) => {

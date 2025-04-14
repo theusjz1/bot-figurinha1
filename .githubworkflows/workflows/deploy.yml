@@ -1,0 +1,36 @@
+name: Deploy Bot com Auth
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v3
+
+      - name: Instalar Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 22
+
+      - name: Instalar dependências
+        run: npm install
+
+      - name: Baixar pasta auth.zip
+        run: |
+          curl -L "$AUTH_ZIP_URL" -o auth.zip
+          unzip auth.zip -d ./
+        env:
+          AUTH_ZIP_URL: ${{ secrets.AUTH_ZIP_URL }}
+
+      - name: Build Docker (Render-style)
+        run: |
+          docker build -t bot-figurinha .
+
+      - name: Enviar para Render (ou outro servidor)
+        run: echo "Envio de imagem para Render aqui (ou usar Git Push caso seja Git Deploy)"

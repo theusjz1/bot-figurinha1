@@ -14,3 +14,10 @@ git config --global user.name "theusjz1"
 git config --global user.email "0000114854074xsp@al.educacao.sp.gov.br"
 
 git remote set-url origin https://theusjz1:<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>@github.com/theusjz1/bot-figurinha.git
+
+
+git init
+git add .
+git commit -m "primeiro commit"
+git remote add origin https://github.com/theusjz1/bot-figurinha1
+git push -u origin main

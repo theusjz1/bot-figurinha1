@@ -47,10 +47,10 @@ async function connectBot() {
     console.log('QR RECEIVED', qr);  // Verifica se o QR Code está sendo gerado
     if (qr) {
       try {
-        // Caminho absoluto para salvar o QR Code como PNG no diretório desejado
-        const qrFilePath = path.join('C:', 'Users', 'theusjz', 'Documents', 'whatsapp-bot-stickers', 'qr-code.png');
-        await QRCode.toFile(qrFilePath, qr);  // Gera o arquivo PNG
-        console.log(`QR Code salvo como "${qrFilePath}".`);
+        // Gerando o QR Code e salvando como PNG no caminho desejado
+        const qrPath = path.join('C:', 'Users', 'theusjz', 'Documents', 'whatsapp-bot-stickers', 'qr-code.png');
+        await QRCode.toFile(qrPath, qr);  // Gera o arquivo PNG
+        console.log(`QR Code salvo como "qr-code.png" em: ${qrPath}`);
       } catch (error) {
         console.error('Erro ao gerar o QR Code:', error);
       }

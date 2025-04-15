@@ -8,3 +8,7 @@ bot-figurinha-mirror
 *.ogg
 temp_input
 temp_output
+bot-figurinha-mirror/
+bot-figurinha-mirror.bfg-report/
+atalho.txt
+.gitignorecls

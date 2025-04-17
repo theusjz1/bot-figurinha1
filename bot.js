@@ -1,62 +1,58 @@
-const { default: makeWASocket, useSingleFileAuthState, fetchLatestBaileysVersion, DisconnectReason, makeInMemoryStore, Browsers } = require("@whiskeysockets/baileys");
-const { Boom } = require("@hapi/boom");
-const fs = require("fs");
-const path = require("path");
-const qrcode = require("qrcode");
+const { Boom } = require('@hapi/boom');
+const makeWASocket = require('@whiskeysockets/baileys').default;
+const {
+  useSingleFileAuthState,
+  fetchLatestBaileysVersion,
+  makeInMemoryStore,
+  DisconnectReason,
+} = require('@whiskeysockets/baileys');
 
-// Autenticação
-const { state, saveState } = useSingleFileAuthState("./auth.json");
+const { state, saveState } = useSingleFileAuthState('./auth.json');
+const pino = require('pino');
+const store = makeInMemoryStore({ logger: pino().child({ level: 'silent', stream: 'store' }) });
+store.readFromFile('./baileys_store.json');
 
-// Função para inicializar o bot
+setInterval(() => {
+  store.writeToFile('./baileys_store.json');
+}, 10_000);
+
 async function startSock() {
   const { version, isLatest } = await fetchLatestBaileysVersion();
   const sock = makeWASocket({
     version,
-    auth: state,
     printQRInTerminal: true,
-    browser: Browsers.ubuntu("Bot WhatsApp"),
+    auth: state,
+    logger: pino({ level: 'silent' }),
   });
 
-  // Salva a sessão quando houver mudanças
-  sock.ev.on("creds.update", saveState);
+  store.bind(sock.ev);
+  sock.ev.on('creds.update', saveState);
 
-  // Evento de recebimento de mensagens
-  sock.ev.on("messages.upsert", async (msg) => {
-    const m = msg.messages[0];
-    if (!m.message || m.key.fromMe) return;
+  sock.ev.on('messages.upsert', async ({ messages }) => {
+    const msg = messages[0];
+    if (!msg.message || msg.key.fromMe) return;
 
-    const messageType = Object.keys(m.message)[0];
-    const sender = m.key.remoteJid;
+    const body = msg.message?.conversation || msg.message?.extendedTextMessage?.text || "";
+    const sender = msg.key.remoteJid;
 
-    // Comando "!figurinha" com imagem
-    if (m.message?.imageMessage && m.message.imageMessage.caption?.toLowerCase() === "!figurinha") {
-      const buffer = await sock.downloadMediaMessage(m);
-      await sock.sendMessage(sender, {
-        sticker: buffer,
-      });
-    }
-
-    // Comando "!figurinha" com vídeo curto (máx. 10s)
-    if (m.message?.videoMessage && m.message.videoMessage.caption?.toLowerCase() === "!figurinha") {
-      const buffer = await sock.downloadMediaMessage(m);
-      await sock.sendMessage(sender, {
-        sticker: buffer,
-      });
+    if (msg.message.imageMessage || msg.message.videoMessage) {
+      if (body.toLowerCase().startsWith('!figurinha')) {
+        const buffer = await sock.downloadMediaMessage(msg);
+        await sock.sendMessage(sender, {
+          sticker: buffer,
+        }, { quoted: msg });
+      }
     }
   });
 
-  // Reconexão em caso de desconexão
-  sock.ev.on("connection.update", (update) => {
+  sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect } = update;
-    if (connection === "close") {
+    if (connection === 'close') {
       const shouldReconnect =
         lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-      console.log("Conexão encerrada. Reconectando?", shouldReconnect);
       if (shouldReconnect) {
         startSock();
       }
-    } else if (connection === "open") {
-      console.log("Conectado com sucesso ✅");
     }
   });
 }

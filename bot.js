@@ -1,60 +1,59 @@
-const { Boom } = require('@hapi/boom');
-const makeWASocket = require('@whiskeysockets/baileys').default;
-const {
-  useSingleFileAuthState,
-  fetchLatestBaileysVersion,
-  makeInMemoryStore,
-  DisconnectReason,
-} = require('@whiskeysockets/baileys');
+const { WAConnection, MessageType, Mimetype, ReconnectMode, GroupSettingChange } = require('@adiwajshing/baileys');
+const fs = require('fs');
+const qrcode = require('qrcode-terminal');
+const path = require('path');
 
-const { state, saveState } = useSingleFileAuthState('./auth.json');
-const pino = require('pino');
-const store = makeInMemoryStore({ logger: pino().child({ level: 'silent', stream: 'store' }) });
-store.readFromFile('./baileys_store.json');
-
-setInterval(() => {
-  store.writeToFile('./baileys_store.json');
-}, 10_000);
-
-async function startSock() {
-  const { version, isLatest } = await fetchLatestBaileysVersion();
-  const sock = makeWASocket({
-    version,
-    printQRInTerminal: true,
-    auth: state,
-    logger: pino({ level: 'silent' }),
-  });
-
-  store.bind(sock.ev);
-  sock.ev.on('creds.update', saveState);
-
-  sock.ev.on('messages.upsert', async ({ messages }) => {
-    const msg = messages[0];
-    if (!msg.message || msg.key.fromMe) return;
-
-    const body = msg.message?.conversation || msg.message?.extendedTextMessage?.text || "";
-    const sender = msg.key.remoteJid;
-
-    if (msg.message.imageMessage || msg.message.videoMessage) {
-      if (body.toLowerCase().startsWith('!figurinha')) {
-        const buffer = await sock.downloadMediaMessage(msg);
-        await sock.sendMessage(sender, {
-          sticker: buffer,
-        }, { quoted: msg });
-      }
+async function startBot() {
+    const conn = new WAConnection();
+    
+    // Carregar e salvar o estado de autenticação
+    const authFile = './auth.json';
+    try {
+        const auth = fs.existsSync(authFile) ? JSON.parse(fs.readFileSync(authFile, 'utf-8')) : {};
+        conn.loadAuthInfo(auth);
+    } catch (err) {
+        console.error('Erro ao carregar ou salvar o estado de autenticação:', err);
     }
-  });
 
-  sock.ev.on('connection.update', (update) => {
-    const { connection, lastDisconnect } = update;
-    if (connection === 'close') {
-      const shouldReconnect =
-        lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-      if (shouldReconnect) {
-        startSock();
-      }
-    }
-  });
+    // Gerar QR code
+    conn.on('qr', (qr) => {
+        qrcode.generate(qr, { small: true });
+    });
+
+    conn.on('open', () => {
+        console.log('Bot autenticado com sucesso');
+    });
+
+    conn.on('chat-update', async (chatUpdate) => {
+        if (!chatUpdate.hasNewMessage) return;
+        
+        const message = chatUpdate.messages.all()[0];
+        const messageType = message.message.conversation ? 'conversation' : '';
+        
+        if (messageType === 'conversation') {
+            const msg = message.message.conversation;
+            
+            // Comando para transformar imagem em figurinha
+            if (msg.startsWith("!figurinha")) {
+                const media = await conn.downloadMediaMessage(message);
+                const mediaBuffer = Buffer.from(media);
+                await conn.sendMessage(message.key.remoteJid, mediaBuffer, MessageType.sticker);
+                console.log('Figura enviada!');
+            }
+        }
+    });
+
+    // Conectar ao WhatsApp
+    await conn.connect();
+
+    // Salvar estado de autenticação após conectar
+    const saveAuth = () => {
+        const authInfo = conn.base64EncodedAuthInfo();
+        fs.writeFileSync(authFile, JSON.stringify(authInfo, null, '\t'));
+    };
+
+    // Salvar sempre que a conexão for bem-sucedida
+    conn.on('close', saveAuth);
 }
 
-startSock();
+startBot();

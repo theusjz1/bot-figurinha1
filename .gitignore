@@ -1,6 +1,5 @@
 auth.json
 auth/
-node_modules/
 .env
 backup-bot-figurinha
 bot-figurinha-mirror

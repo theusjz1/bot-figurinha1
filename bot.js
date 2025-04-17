@@ -1,61 +1,88 @@
+const { makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, delay } = require('@adiwajshing/baileys');
 const express = require('express');
 const qrcode = require('qrcode');
-const fs = require('fs');
-const path = require('path');
-const { default: makeWASocket, useSingleFileAuthState } = require('baileys');
 
-const { state, saveState } = useSingleFileAuthState('./auth.json');
-
+// Configurar o Express para servir o QR Code como HTML
 const app = express();
-const PORT = process.env.PORT || 3000;
+const port = process.env.PORT || 3000;
 
-let qrCodeData = null;
+// Defina o caminho para o arquivo de autenticação
+const authPath = './auth';
 
-// Página HTML com o QR
-app.get('/qr', (req, res) => {
-  if (!qrCodeData) {
-    return res.send('<h2>QR Code ainda não gerado. Aguarde...</h2>');
-  }
+// Use MultiFileAuthState para gerenciar autenticação
+const { state, saveState } = useMultiFileAuthState(authPath);
 
-  res.send(`
-    <html>
-      <head>
-        <title>QR do Bot</title>
-      </head>
-      <body style="text-align:center; font-family:sans-serif; margin-top:40px">
-        <h2>Escaneie o QR Code abaixo</h2>
-        <img src="data:image/png;base64,${qrCodeData}" />
-        <p>Atualize esta página se o QR expirar.</p>
-      </body>
-    </html>
-  `);
+// Função para gerar e exibir o QR Code como HTML
+const generateQrCode = (qr) => {
+    return qrcode.toDataURL(qr, { errorCorrectionLevel: 'H' })
+        .then(url => {
+            return `<html>
+                        <body>
+                            <h1>Escaneie o QR Code para logar no WhatsApp</h1>
+                            <img src="${url}" alt="QR Code" />
+                        </body>
+                    </html>`;
+        });
+};
+
+// Crie a conexão do WhatsApp
+const sock = makeWASocket({
+    auth: state,
+    printQRInTerminal: false, // Desabilitar a exibição do QR Code no terminal
 });
 
-// Inicializa o bot e gera o QR
-async function startBot() {
-  const sock = makeWASocket({
-    auth: state,
-    printQRInTerminal: false,
-  });
+// Salve o estado de autenticação após a inicialização
+sock.ev.on('creds.update', saveState);
 
-  sock.ev.on('connection.update', async (update) => {
-    const { connection, qr } = update;
-    if (qr) {
-      const qrBuffer = await qrcode.toBuffer(qr);
-      qrCodeData = qrBuffer.toString('base64');
-      console.log('✅ QR disponível em /qr');
+// Configurar o servidor Express para exibir o QR Code
+app.get('/', async (req, res) => {
+    try {
+        // Gerar QR Code
+        const qrCodeHtml = await generateQrCode(sock.generateQR());
+        res.send(qrCodeHtml);
+    } catch (error) {
+        res.status(500).send('Erro ao gerar o QR Code');
     }
+});
 
-    if (connection === 'open') {
-      console.log('✅ Bot conectado com sucesso!');
+// Iniciar o servidor Express
+app.listen(port, () => {
+    console.log(`Servidor de QR Code rodando na porta ${port}`);
+});
+
+// Evento de quando o bot é autenticado com sucesso
+sock.ev.on('connection.update', (update) => {
+    const { connection, lastDisconnect } = update;
+
+    if (connection === 'close') {
+        const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== 401;
+        console.log('Conexão perdida, tentando reconectar...', shouldReconnect);
+        if (shouldReconnect) {
+            // Reconectar após desconexão
+            makeWASocket({
+                auth: state
+            });
+        }
+    } else if (connection === 'open') {
+        console.log('Bot autenticado e conectado com sucesso!');
     }
-  });
+});
 
-  sock.ev.on('creds.update', saveState);
-}
+// Função para processar mensagens
+sock.ev.on('messages.upsert', async (m) => {
+    console.log(m);
+
+    // Exemplo de resposta a uma mensagem com "!figurinha"
+    const message = m.messages[0];
+    if (message.message?.imageMessage?.caption === "!figurinha") {
+        const sticker = await sock.sendImageAsSticker(message.key.remoteJid, message.message.imageMessage.url);
+        console.log('Figura enviada!', sticker);
+    }
+});
+
+// Iniciar o bot
+const startBot = async () => {
+    console.log("Bot iniciado. Aguardando QR Code para autenticação...");
+};
 
 startBot();
-
-app.listen(PORT, () => {
-  console.log(`Servidor rodando em http://localhost:${PORT}/qr`);
-});

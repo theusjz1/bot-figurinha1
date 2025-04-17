@@ -1,126 +1,61 @@
-const {
-  default: makeWASocket,
-  useMultiFileAuthState,
-  DisconnectReason,
-  fetchLatestBaileysVersion,
-  downloadMediaMessage
-} = require('baileys');
-
+const express = require('express');
+const qrcode = require('qrcode');
 const fs = require('fs');
-const pino = require('pino');
-const { writeFile } = require('fs/promises');
-const ffmpeg = require('fluent-ffmpeg');
 const path = require('path');
-const QRCode = require('qrcode');  // Importando a biblioteca qrcode
+const { default: makeWASocket, useSingleFileAuthState } = require('baileys');
 
-async function connectBot() {
-  console.log('Iniciando o bot...');
+const { state, saveState } = useSingleFileAuthState('./auth.json');
 
-  // Ajuste do caminho da pasta de autenticação para ser absoluto
-  const { state, saveCreds } = await useMultiFileAuthState(path.join(__dirname, 'auth'));
-  const { version } = await fetchLatestBaileysVersion();
+const app = express();
+const PORT = process.env.PORT || 3000;
 
+let qrCodeData = null;
+
+// Página HTML com o QR
+app.get('/qr', (req, res) => {
+  if (!qrCodeData) {
+    return res.send('<h2>QR Code ainda não gerado. Aguarde...</h2>');
+  }
+
+  res.send(`
+    <html>
+      <head>
+        <title>QR do Bot</title>
+      </head>
+      <body style="text-align:center; font-family:sans-serif; margin-top:40px">
+        <h2>Escaneie o QR Code abaixo</h2>
+        <img src="data:image/png;base64,${qrCodeData}" />
+        <p>Atualize esta página se o QR expirar.</p>
+      </body>
+    </html>
+  `);
+});
+
+// Inicializa o bot e gera o QR
+async function startBot() {
   const sock = makeWASocket({
-    version,
-    logger: pino({ level: 'silent' }),
-    printQRInTerminal: true,  // Garante que o QR Code será exibido no terminal
-    auth: state,              // Usa o estado da autenticação gerado
-    browser: ['Chrome (Bot)', 'Safari', '1.0.0'],  // Ajuda a gerar um QR Code mais claro
+    auth: state,
+    printQRInTerminal: false,
   });
 
-  sock.ev.on('creds.update', saveCreds);
-
-  // Log para verificar o estado da conexão
-  sock.ev.on('connection.update', (update) => {
-    const { connection, lastDisconnect } = update;
-    console.log('Conexão Atualizada:', update);  // Log da atualização da conexão
-    if (connection === 'close') {
-      const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-      if (shouldReconnect) connectBot();
-    } else if (connection === 'open') {
-      console.log('✅ BOT CONECTADO AO WHATSAPP');
-    }
-  });
-
-  // Verifique se o evento QR está sendo chamado corretamente
-  sock.ev.on('qr', async (qr) => {
-    console.log('QR RECEIVED', qr);  // Verifica se o QR Code está sendo gerado
+  sock.ev.on('connection.update', async (update) => {
+    const { connection, qr } = update;
     if (qr) {
-      try {
-        const qrPath = path.join('C:', 'Users', 'theusjz', 'Documents', 'whatsapp-bot-stickers', 'qr-code.png');
-        // Gera o arquivo PNG no caminho absoluto
-        await QRCode.toFile(qrPath, qr);  
-        console.log(`QR Code salvo em: ${qrPath}`);
-      } catch (error) {
-        console.error('Erro ao gerar o QR Code:', error);
-      }
-    } else {
-      console.log('QR Code não recebido.');
+      const qrBuffer = await qrcode.toBuffer(qr);
+      qrCodeData = qrBuffer.toString('base64');
+      console.log('✅ QR disponível em /qr');
+    }
+
+    if (connection === 'open') {
+      console.log('✅ Bot conectado com sucesso!');
     }
   });
 
-  sock.ev.on('messages.upsert', async ({ messages }) => {
-    const msg = messages[0];
-    if (!msg.message || !msg.key) return;
-
-    const jid = msg.key.remoteJid;
-    const tipoMsg = Object.keys(msg.message)[0];
-    const isGroup = jid.endsWith('@g.us');
-    const texto = msg.message?.conversation ||
-                  msg.message?.extendedTextMessage?.text ||
-                  msg.message?.imageMessage?.caption ||
-                  msg.message?.videoMessage?.caption || '';
-
-    console.log(`📥 Mensagem de ${jid}: ${texto}`);
-
-    if (texto.toLowerCase().includes('!figurinha')) {
-      if (
-        tipoMsg === 'imageMessage' ||
-        tipoMsg === 'videoMessage'
-      ) {
-        try {
-          const buffer = await downloadMediaMessage(msg, 'buffer', {}, { logger: pino() });
-          const tempInput = path.join(__dirname, 'temp_input');
-          const tempOutput = path.join(__dirname, 'temp_output.webp');
-
-          await writeFile(tempInput, buffer);
-
-          await new Promise((resolve, reject) => {
-            ffmpeg(tempInput)
-              .outputOptions([
-                '-vcodec', 'libwebp',
-                '-vf', 'scale=512:512:force_original_aspect_ratio=decrease,fps=24',
-                '-loop', '0',
-                '-ss', '0',
-                '-t', '10',
-                '-preset', 'default',
-                '-an',
-                '-vsync', '0'
-              ])
-              .toFormat('webp')
-              .save(tempOutput)
-              .on('end', resolve)
-              .on('error', reject);
-          });
-
-          const stickerBuffer = fs.readFileSync(tempOutput);
-
-          await sock.sendMessage(jid, {
-            sticker: stickerBuffer
-          }, { quoted: msg });
-
-          fs.unlinkSync(tempInput);
-          fs.unlinkSync(tempOutput);
-          console.log('✅ Sticker enviado!');
-        } catch (err) {
-          console.error('❌ Erro ao criar figurinha:', err);
-          await sock.sendMessage(jid, { text: '❌ Erro ao criar figurinha' }, { quoted: msg });
-        }
-      } else {
-        await sock.sendMessage(jid, { text: '❗ Envie uma imagem ou vídeo com a legenda !figurinha' }, { quoted: msg });
-      }
-    }
-  });
+  sock.ev.on('creds.update', saveState);
 }
 
-connectBot();
+startBot();
+
+app.listen(PORT, () => {
+  console.log(`Servidor rodando em http://localhost:${PORT}/qr`);
+});
